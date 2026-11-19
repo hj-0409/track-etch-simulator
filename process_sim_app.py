@@ -164,9 +164,9 @@ with tab_limits:
         st.markdown("#### 🌀 Photo Track 모델 가정 및 배제 변수")
         st.markdown(
             """
-            - **적용 수식 경향:** 스핀 코팅 최종 두께는 점도의 제곱근에 비례하고 회전속도(RPM)의 제곱근에 반비례($t \\propto \\mu^{0.5} / \\omega^{0.5}$)한다는 고전적 스핀 코팅 근사식을 기준으로 기준점 스케일링했습니다.
-            - **단순화 및 배제 항목:** 용매 휘발 속도(Evaporation rate), 디스펜스 노즐 이동·토출량, 컵(Cup) 배기 유량, 열판(Bake Plate) 존별 온도 편차 및 웨이퍼 에지 비드(Edge Bead) 현상은 모델에서 제외했습니다.
-            - **WIWNU 가정:** 고속 회전 시 원심력 구배로 인해 외곽 편차가 커지는 경향을 1차 선형식으로 단순화했습니다.
+- **적용 수식 경향:** 스핀 코팅 최종 두께는 점도의 제곱근에 비례하고 회전속도(RPM)의 제곱근에 반비례($t \\propto \\mu^{0.5} / \\omega^{0.5}$)한다는 고전적 스핀 코팅 근사식을 기준으로 기준점 스케일링했습니다.
+- **단순화 및 배제 항목:** 용매 휘발 속도(Evaporation rate), 디스펜스 노즐 이동·토출량, 컵(Cup) 배기 유량, 열판(Bake Plate) 존별 온도 편차 및 웨이퍼 에지 비드(Edge Bead) 현상은 모델에서 제외했습니다.
+- **WIWNU 가정:** 고속 회전 시 원심력 구배로 인해 외곽 편차가 커지는 경향을 1차 선형식으로 단순화했습니다.
             """
         )
 
@@ -174,9 +174,9 @@ with tab_limits:
         st.markdown("#### ⚡ Plasma Etch 모델 가정 및 배제 변수")
         st.markdown(
             """
-            - **적용 수식 경향:** RF Power 증가에 따른 플라즈마 밀도·이온 에너지 상승으로 식각률이 증가하되, 물리적 스퍼터링 비중이 커져 PR 대비 선택비(Selectivity)는 감소하는 트레이드오프를 반영했습니다.
-            - **단순화 및 배제 항목:** 실제 식각 가스 화학종($\\text{CF}_4$, $\\text{SF}_6$, $\\text{Cl}_2$, $\\text{O}_2$ 등) 비율, 라디칼 대 이온 플럭스 비율, 측벽 폴리머 패시베이션 두께, 종횡비 의존 식각(ARDE/Micro-loading) 및 챔버 월 컨디션 변화는 포함하지 않았습니다.
-            - **프로파일 표현:** 단면 프로파일은 등방성(언더컷)과 이방성(수직 식각)의 상대 비율을 시각적으로 비교하기 위한 정규화 2D 근사 그래프입니다.
+- **적용 수식 경향:** RF Power 증가에 따른 플라즈마 밀도·이온 에너지 상승으로 식각률이 증가하되, 물리적 스퍼터링 비중이 커져 PR 대비 선택비(Selectivity)는 감소하는 트레이드오프를 반영했습니다.
+- **단순화 및 배제 항목:** 실제 식각 가스 화학종($\\text{CF}_4$, $\\text{SF}_6$, $\\text{Cl}_2$, $\\text{O}_2$ 등) 비율, 라디칼 대 이온 플럭스 비율, 측벽 폴리머 패시베이션 두께, 종횡비 의존 식각(ARDE/Micro-loading) 및 챔버 월 컨디션 변화는 포함하지 않았습니다.
+- **프로파일 표현:** 단면 프로파일은 등방성(언더컷)과 이방성(수직 식각)의 상대 비율을 시각적으로 비교하기 위한 정규화 2D 근사 그래프입니다.
             """
         )
 
@@ -209,22 +209,52 @@ if st.button("🚀 현재 시뮬레이션 조건 기반 점검 포인트 생성"
             "2) 공정 편차 발생 시 확인해야 할 트레이드오프\n"
             "3) 이 시뮬레이션 모델이 놓치고 있는 실제 팹 변수 1~2가지"
         )
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
         with st.spinner("🤖 점검 포인트를 정리 중입니다..."):
             try:
                 session = requests.Session()
-                retry = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504], raise_on_status=False)
+                retry = Retry(
+                    total=3,
+                    backoff_factor=1,
+                    status_forcelist=[502, 503, 504],
+                    raise_on_status=False,
+                )
                 session.mount("https://", HTTPAdapter(max_retries=retry))
-                resp = session.post(url, json=payload, timeout=30)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if "candidates" in data:
-                        st.success(data["candidates"][0]["content"]["parts"][0]["text"].strip())
+
+                success_text = None
+                last_status = None
+                last_detail = None
+
+                for model_name in models_to_try:
+                    url = (
+                        f"https://generativelanguage.googleapis.com/v1beta/models/"
+                        f"{model_name}:generateContent?key={api_key}"
+                    )
+                    resp = session.post(url, headers=headers, json=payload, timeout=30)
+                    last_status = resp.status_code
+
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if "candidates" in data and data["candidates"]:
+                            parts = data["candidates"][0].get("content", {}).get("parts", [])
+                            if parts and "text" in parts[0]:
+                                success_text = parts[0]["text"].strip()
+                                break
+                        last_detail = f"응답 형식 오류: {data}"
+                        break
+                    elif resp.status_code == 404:
+                        last_detail = f"모델({model_name}) 404 — 다음 모델로 재시도 중"
+                        continue
                     else:
-                        st.error(f"응답 형식 오류: {data}")
+                        last_detail = f"API 서버 상태 코드: {resp.status_code} ({resp.text[:200]})"
+                        break
+
+                if success_text:
+                    st.success(success_text)
                 else:
-                    st.error(f"⚠️ API 서버 상태 코드: {resp.status_code}")
+                    st.error(f"⚠️ {last_detail or f'API 요청 실패 (상태 코드: {last_status})'}")
             except Exception as e:
                 st.error(f"요청 실패: {e}")
