@@ -8,7 +8,7 @@
 
 ## 🔗 Live Demo & Screen Capture
 
-- **Live App:** *(Streamlit Community Cloud 배포 후 URL 기입)*
+- **Live App:** https://track-etch-simulator-mfvomdxzufhgujx62st4nl.streamlit.app/
 - **Screen Captures:**
   - `assets/track_tab.png` — Photo Track 파라미터 조절, 두께-RPM 스윕 곡선 및 권장 RPM 역산 화면
   - `assets/etch_tab.png` — Plasma Etch 식각률·선택비·목표 깊이 진행률 및 2D 단면 프로파일 화면
