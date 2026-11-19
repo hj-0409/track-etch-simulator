@@ -209,7 +209,6 @@ if st.button("🚀 현재 시뮬레이션 조건 기반 점검 포인트 생성"
             "2) 공정 편차 발생 시 확인해야 할 트레이드오프\n"
             "3) 이 시뮬레이션 모델이 놓치고 있는 실제 팹 변수 1~2가지"
         )
-        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
@@ -224,37 +223,59 @@ if st.button("🚀 현재 시뮬레이션 조건 기반 점검 포인트 생성"
                 )
                 session.mount("https://", HTTPAdapter(max_retries=retry))
 
-                success_text = None
-                last_status = None
-                last_detail = None
+                # 현재 API 키로 사용 가능한 모델 목록 조회
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+                models_resp = session.get(list_url, timeout=20)
 
-                for model_name in models_to_try:
-                    url = (
-                        f"https://generativelanguage.googleapis.com/v1beta/models/"
-                        f"{model_name}:generateContent?key={api_key}"
+                if models_resp.status_code != 200:
+                    st.error(
+                        f"⚠️ 모델 목록 조회 실패 (상태 코드: {models_resp.status_code}) — "
+                        "API 키 유효성 또는 Generative Language API 활성화 여부를 확인해 주세요."
                     )
-                    resp = session.post(url, headers=headers, json=payload, timeout=30)
-                    last_status = resp.status_code
-
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if "candidates" in data and data["candidates"]:
-                            parts = data["candidates"][0].get("content", {}).get("parts", [])
-                            if parts and "text" in parts[0]:
-                                success_text = parts[0]["text"].strip()
-                                break
-                        last_detail = f"응답 형식 오류: {data}"
-                        break
-                    elif resp.status_code == 404:
-                        last_detail = f"모델({model_name}) 404 — 다음 모델로 재시도 중"
-                        continue
-                    else:
-                        last_detail = f"API 서버 상태 코드: {resp.status_code} ({resp.text[:200]})"
-                        break
-
-                if success_text:
-                    st.success(success_text)
                 else:
-                    st.error(f"⚠️ {last_detail or f'API 요청 실패 (상태 코드: {last_status})'}")
+                    available_models = []
+                    for m in models_resp.json().get("models", []):
+                        methods = m.get("supportedGenerationMethods", [])
+                        if "generateContent" in methods:
+                            clean_name = m.get("name", "").replace("models/", "")
+                            if clean_name:
+                                available_models.append(clean_name)
+
+                    # flash 계열 우선 정렬
+                    available_models.sort(key=lambda x: (0 if "flash" in x else 1, x))
+
+                    if not available_models:
+                        st.error("⚠️ `generateContent`를 지원하는 사용 가능한 Gemini 모델이 없습니다.")
+                    else:
+                        success_text = None
+                        last_err = None
+
+                        for model_name in available_models[:5]:
+                            gen_url = (
+                                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                                f"{model_name}:generateContent?key={api_key}"
+                            )
+                            resp = session.post(gen_url, headers=headers, json=payload, timeout=30)
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                candidates = data.get("candidates", [])
+                                if candidates:
+                                    parts = candidates[0].get("content", {}).get("parts", [])
+                                    if parts and "text" in parts[0]:
+                                        success_text = parts[0]["text"].strip()
+                                        break
+                                last_err = f"응답 형식 오류 ({model_name}): {data}"
+                                break
+                            elif resp.status_code == 404:
+                                last_err = f"{model_name} (404)"
+                                continue
+                            else:
+                                last_err = f"API 서버 상태 코드: {resp.status_code} ({resp.text[:200]})"
+                                break
+
+                        if success_text:
+                            st.success(success_text)
+                        else:
+                            st.error(f"⚠️ 점검 포인트 생성 실패: {last_err}")
             except Exception as e:
                 st.error(f"요청 실패: {e}")
